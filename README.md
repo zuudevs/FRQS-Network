@@ -1,8 +1,8 @@
-# ZHTTP - High-Performance C++23 Web Server
+# FRQS Network - High-Performance C++23 Web Server
 
 ## 🚀 Overview
 
-ZHTTP is a production-ready, high-performance HTTP/1.1 web server built with modern C++23. Designed with security, speed, and modularity in mind.
+FRQS Network is a production-ready, high-performance HTTP/1.1 web server built with modern C++23. Designed with security, speed, and modularity in mind.
 
 ## ✨ Key Features
 
@@ -27,7 +27,7 @@ ZHTTP is a production-ready, high-performance HTTP/1.1 web server built with mod
 ## 📁 Project Structure
 
 ```
-ZHTTP/
+FRQS Network/
 ├── CMakeLists.txt
 ├── README.md
 ├── include/
@@ -76,13 +76,13 @@ cmake --build . --config Release
 
 ```bash
 # Run with defaults (port 8080, ./public, auto threads)
-./bin/zhttp
+./bin/FRQS Network
 
 # Custom configuration
-./bin/zhttp <port> <document_root> <thread_count>
+./bin/FRQS Network <port> <document_root> <thread_count>
 
 # Example
-./bin/zhttp 3000 /var/www/html 8
+./bin/FRQS Network 3000 /var/www/html 8
 ```
 
 ### Directory Structure
@@ -138,7 +138,7 @@ std::string path = extract_path(request);      // Allocation 2
 std::string header = extract_header(request);  // Allocation 3
 ```
 
-ZHTTP approach (single allocation):
+FRQS Network approach (single allocation):
 ```cpp
 raw_request_ = request;  // One allocation
 std::string_view method = raw_request_.substr(...);  // Zero-copy
@@ -176,16 +176,16 @@ std::string_view path = raw_request_.substr(...);    // Zero-copy
 #include "frqs-net.hpp"
 
 int main() {
-    zhttp::core::Server server(8080);
+    FRQS Network::core::Server server(8080);
     
     // Custom API endpoint
     server.setRequestHandler([](const auto& req) {
         if (req.getPath() == "/api/status") {
-            return zhttp::http::HTTPResponse()
+            return FRQS Network::http::HTTPResponse()
                 .ok(R"({"status": "online"})")
                 .setContentType("application/json");
         }
-        return zhttp::http::HTTPResponse().notFound();
+        return FRQS Network::http::HTTPResponse().notFound();
     });
     
     server.start();
@@ -207,7 +207,7 @@ Compile-time computation reduces runtime overhead. IPv4 operations, byte swappin
 
 Enable verbose logging:
 ```cpp
-zhttp::utils::enableFileLogging("debug.log");
+FRQS Network::utils::enableFileLogging("debug.log");
 ```
 
 Check logs for:
