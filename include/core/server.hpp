@@ -76,7 +76,7 @@ private:
     http::HTTPResponse serveStaticFile(const http::HTTPRequest& request);
     
     // Route handlers
-    http::HTTPResponse handleStream(const http::HTTPRequest& request);
+    void handleStreamDirect(net::Socket client, const http::HTTPRequest& request);
     http::HTTPResponse handleInputControl(const http::HTTPRequest& request);
     http::HTTPResponse handleFileUpload(const http::HTTPRequest& request);
 };

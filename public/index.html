@@ -1,75 +1,4 @@
-#include "frqs-net.hpp"
-#include "utils/config.hpp"
-#include <iostream>
-#include <csignal>
-#include <fstream>
-
-#undef min
-
-void SetupConsole() {
-    // 1. Set Output Code Page ke UTF-8
-    // Ini yang bikin karakter box (┌, │, └) muncul bener, bukan jadi cacing (Γöé).
-    if (!SetConsoleOutputCP(CP_UTF8)) {
-        std::cerr << "Warning: Gagal set output CP ke UTF-8!" << std::endl;
-    }
-
-    // 2. Set Input Code Page ke UTF-8 (Biar inputan user gak error kalau ada karakter aneh)
-    if (!SetConsoleCP(CP_UTF8)) {
-        std::cerr << "Warning: Gagal set input CP ke UTF-8!" << std::endl;
-    }
-
-    // 3. Enable Virtual Terminal Processing
-    // Ini biar support ANSI colors (\033[31m...) dan cursor movement di CMD/PowerShell modern.
-    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (hOut == INVALID_HANDLE_VALUE) return;
-
-    DWORD dwMode = 0;
-    if (!GetConsoleMode(hOut, &dwMode)) return;
-
-    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-    if (!SetConsoleMode(hOut, dwMode)) {
-        // Kalau gagal, biasanya karena Windows versi lama (Pre-Win10), tapi ya udahlah.
-        std::cerr << "Warning: Gagal enable Virtual Terminal Processing!" << std::endl;
-    }
-}
-
-namespace {
-    frqs::core::Server* g_server = nullptr;
-
-    void signalHandler(int signal) {
-        if (signal == SIGINT || signal == SIGTERM) {
-            frqs::utils::logInfo("\n🛑 Shutdown signal received...");
-            if (g_server) {
-                g_server->stop();
-            }
-        }
-    }
-    
-    void createDefaultConfig(const std::filesystem::path& config_path) {
-        std::ofstream config(config_path);
-        config << "# FRQS Network Configuration\n"
-               << "# Lab Monitoring & Screen Sharing Server\n\n"
-               << "# Server Settings\n"
-               << "PORT=8080\n"
-               << "DOC_ROOT=public\n"
-               << "THREAD_COUNT=4\n\n"
-               << "# Security\n"
-               << "AUTH_TOKEN=secure_lab_token_2025\n\n"
-               << "# Screen Capture Settings\n"
-               << "FPS_LIMIT=15\n"
-               << "SCALE_FACTOR=2\n\n"
-               << "# Upload Settings\n"
-               << "UPLOAD_DIR=uploads\n"
-               << "MAX_UPLOAD_SIZE=52428800\n";  // 50MB
-        
-        frqs::utils::logInfo("✅ Created default config: frqs.conf");
-    }
-    
-    void createViewerHTML(const std::filesystem::path& doc_root) {
-        std::filesystem::create_directories(doc_root);
-        
-        std::ofstream html(doc_root / "index.html");
-        html << R"HTML(<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -274,10 +203,6 @@ namespace {
                     <input type="text" id="authToken" placeholder="Auth Token" value="secure_lab_token_2025">
                     <button onclick="connectStream()">🔗 Connect</button>
                     <button onclick="disconnectStream()" class="btn-danger">❌ Disconnect</button>
-                    <p style="font-size: 0.8em; color: #a0a0a0; margin-top: 10px;">
-                        💡 Default token: secure_lab_token_2025<br>
-                        Check frqs.conf for your token
-                    </p>
                 </div>
                 
                 <div class="control-section">
@@ -334,14 +259,7 @@ namespace {
                 return;
             }
             
-            // Karena <img> tidak bisa set custom headers, kita gunakan EventSource atau fetch
-            // Tapi untuk MJPEG stream yang simple, kita gunakan query parameter workaround
-            
-            loading.style.display = 'none';
-            screenImg.style.display = 'block';
-            
-            // Set stream URL dengan token di query parameter
-            const streamUrl = `${SERVER_URL}/stream?token=${encodeURIComponent(token)}`;
+            const streamUrl = `${SERVER_URL}/stream`;
             
             screenImg.onload = () => {
                 frameCount++;
@@ -351,18 +269,27 @@ namespace {
                     frameCount = 0;
                     lastFrameTime = now;
                 }
-                updateStatus(true);
             };
             
             screenImg.onerror = () => {
                 updateStatus(false);
                 loading.style.display = 'block';
                 screenImg.style.display = 'none';
-                alert('Connection failed: Check auth token or server status');
             };
             
-            // Add timestamp to prevent caching
-            screenImg.src = streamUrl + '&t=' + Date.now();
+            fetch(streamUrl, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            }).then(response => {
+                if (!response.ok) throw new Error('Auth failed');
+                
+                loading.style.display = 'none';
+                screenImg.style.display = 'block';
+                screenImg.src = streamUrl + '?auth=' + encodeURIComponent(`Bearer ${token}`);
+                updateStatus(true);
+            }).catch(err => {
+                alert('Connection failed: ' + err.message);
+                updateStatus(false);
+            });
         }
         
         function disconnectStream() {
@@ -421,123 +348,4 @@ namespace {
         };
     </script>
 </body>
-</html>)HTML";
-        
-        frqs::utils::logInfo("✅ Created viewer: public/index.html");
-    }
-}
-
-int main(int argc, char* argv[]) {
-    using namespace frqs;
-	SetupConsole() ;
-    
-    std::cout << R"(
-╔═══════════════════════════════════════════════════════════╗
-║                                                           ║
-║   ███████╗██████╗  ██████╗ ███████╗    ███╗   ██╗███████╗╗
-║   ██╔════╝██╔══██╗██╔═══██╗██╔════╝    ████╗  ██║██╔════╝║
-║   █████╗  ██████╔╝██║   ██║███████╗    ██╔██╗ ██║█████╗  ║
-║   ██╔══╝  ██╔══██╗██║▄▄ ██║╚════██║    ██║╚██╗██║██╔══╝  ║
-║   ██║     ██║  ██║╚██████╔╝███████║    ██║ ╚████║███████╗║
-║   ╚═╝     ╚═╝  ╚═╝ ╚══▀▀═╝ ╚══════╝    ╚═╝  ╚═══╝╚══════╝║
-║                                                           ║
-║        High-Performance Screen Sharing Server            ║
-║              C++23 | Production Ready                    ║
-║                                                           ║
-╚═══════════════════════════════════════════════════════════╝
-)" << std::endl;
-    
-    try {
-        // Setup logging
-        utils::enableFileLogging("frqs_server.log");
-        
-        utils::logInfo("🚀 Starting FRQS Network Server...");
-        utils::logInfo("📅 " + std::string(__DATE__) + " " + std::string(__TIME__));
-        
-        // Load or create config
-        auto& config = utils::Config::instance();
-        std::filesystem::path config_file = "frqs.conf";
-        
-        if (argc > 1) {
-            config_file = argv[1];
-        }
-        
-        if (!std::filesystem::exists(config_file)) {
-            utils::logInfo("📝 Config file not found, creating default...");
-            createDefaultConfig(config_file);
-        }
-        
-        if (!config.load(config_file)) {
-            utils::logWarn("⚠️  Could not load config, using defaults");
-        } else {
-            utils::logInfo("✅ Configuration loaded from: " + config_file.string());
-        }
-        
-        // Create directories
-        std::filesystem::path doc_root = config.getDocRoot();
-        std::filesystem::path upload_dir = config.getUploadDir();
-        
-        if (!std::filesystem::exists(doc_root / "index.html")) {
-            utils::logInfo("📄 Creating default viewer page...");
-            createViewerHTML(doc_root);
-        }
-        
-        if (!std::filesystem::exists(upload_dir)) {
-            std::filesystem::create_directories(upload_dir);
-            utils::logInfo("📁 Created upload directory: " + upload_dir.string());
-        }
-        
-        // Server configuration
-        uint16_t port = config.getPort();
-        size_t threads = static_cast<size_t>(config.getThreadCount());
-        
-        // Display configuration
-        std::cout << "\n┌─────────────────────────────────────┐" << std::endl;
-        std::cout << "│  Server Configuration               │" << std::endl;
-        std::cout << "├─────────────────────────────────────┤" << std::endl;
-        std::cout << "│  Port:          " << port << std::string(20 - std::to_string(port).length(), ' ') << "│" << std::endl;
-        std::cout << "│  Threads:       " << threads << std::string(20 - std::to_string(threads).length(), ' ') << "│" << std::endl;
-        std::cout << "│  Doc Root:      " << doc_root.string().substr(0, 17) << std::string(20 - std::min(17, (int)doc_root.string().length()), ' ') << "│" << std::endl;
-        std::cout << "│  FPS Limit:     " << config.getFpsLimit() << std::string(20 - std::to_string(config.getFpsLimit()).length(), ' ') << "│" << std::endl;
-        std::cout << "│  Scale Factor:  " << config.getScaleFactor() << std::string(20 - std::to_string(config.getScaleFactor()).length(), ' ') << "│" << std::endl;
-        std::cout << "└─────────────────────────────────────┘\n" << std::endl;
-        
-        // Create server
-        core::Server server(port, threads);
-        server.setDocumentRoot(doc_root);
-        g_server = &server;
-        
-        // Signal handlers
-        std::signal(SIGINT, signalHandler);
-        std::signal(SIGTERM, signalHandler);
-        
-        // Display access info
-        std::cout << "┌─────────────────────────────────────┐" << std::endl;
-        std::cout << "│  🌐 Server is running!              │" << std::endl;
-        std::cout << "├─────────────────────────────────────┤" << std::endl;
-        std::cout << "│                                     │" << std::endl;
-        std::cout << "│  Local:   http://localhost:" << port << "     │" << std::endl;
-        std::cout << "│  Network: http://[YOUR_IP]:" << port << "  │" << std::endl;
-        std::cout << "│                                     │" << std::endl;
-        std::cout << "│  Auth Token:                        │" << std::endl;
-        std::cout << "│  " << config.getAuthToken() << std::string(37 - config.getAuthToken().length(), ' ') << "│" << std::endl;
-        std::cout << "│                                     │" << std::endl;
-        std::cout << "│  Press Ctrl+C to stop               │" << std::endl;
-        std::cout << "└─────────────────────────────────────┘\n" << std::endl;
-        
-        utils::logInfo("🎯 Accepting connections...");
-        
-        // Start server (blocks)
-        server.start();
-        
-        utils::logInfo("👋 Server shutdown complete");
-        std::cout << "\n✅ Goodbye!\n" << std::endl;
-        
-    } catch (const std::exception& e) {
-        utils::logError("❌ Fatal error: " + std::string(e.what()));
-        std::cerr << "\n❌ Error: " << e.what() << std::endl;
-        return 1;
-    }
-    
-    return 0;
-}
+</html>
