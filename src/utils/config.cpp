@@ -13,28 +13,58 @@
 #include <fstream>
 #include <algorithm>
 #include <cctype>
+#include <iostream>
 
 namespace frqs::utils {
 
 bool Config::load(const std::filesystem::path& config_file) {
     std::lock_guard<std::mutex> lock(mutex_);
     
+    std::cout << "\n🔍 Attempting to load config from: " << config_file << std::endl;
+    std::cout << "   Absolute path: " << std::filesystem::absolute(config_file) << std::endl;
+    std::cout << "   File exists: " << (std::filesystem::exists(config_file) ? "YES" : "NO") << std::endl;
+    
     std::ifstream file(config_file);
     if (!file) {
+        std::cerr << "❌ FAILED to open config file!" << std::endl;
         return false;
     }
     
+    std::cout << "✅ Config file opened successfully\n" << std::endl;
+    
     std::string line;
+    int line_num = 0;
     while (std::getline(file, line)) {
-        parseLine(line);
+        line_num++;
+        
+        // FIXED: Trim in-place before displaying
+        std::string trimmed = trim(line);
+        
+        if (!trimmed.empty() && !trimmed.starts_with('#')) {
+            std::cout << "  Line " << line_num << ": [" << trimmed << "]" << std::endl;
+        }
+        
+        // FIXED: Parse the trimmed string
+        parseLine(trimmed);
     }
+    
+    // Print loaded values
+    std::cout << "\n📋 Loaded configuration values:" << std::endl;
+    std::cout << "   ┌─────────────────────────────────────┐" << std::endl;
+    for (const auto& [key, value] : values_) {
+        std::cout << "   │ " << key;
+        // Pad to 20 chars
+        for (size_t i = key.length(); i < 20; ++i) std::cout << " ";
+        std::cout << "= " << value << std::endl;
+    }
+    std::cout << "   └─────────────────────────────────────┘\n" << std::endl;
     
     return true;
 }
 
 void Config::parseLine(std::string_view line) {
+    // FIXED: Don't re-trim, line is already trimmed
     // Skip comments and empty lines
-    line = trim(line);
     if (line.empty() || line.starts_with('#')) {
         return;
     }
@@ -45,11 +75,12 @@ void Config::parseLine(std::string_view line) {
         return;
     }
     
-    auto key = trim(line.substr(0, eq_pos));
-    auto value = trim(line.substr(eq_pos + 1));
+    // FIXED: Create std::string for key and value to avoid dangling
+    std::string key = trim(line.substr(0, eq_pos));
+    std::string value = trim(line.substr(eq_pos + 1));
     
     if (!key.empty()) {
-        values_[std::string(key)] = std::string(value);
+        values_[key] = value;
     }
 }
 

@@ -8,18 +8,16 @@
 
 void SetupConsole() {
     // 1. Set Output Code Page ke UTF-8
-    // Ini yang bikin karakter box (┌, │, └) muncul bener, bukan jadi cacing (Γöé).
     if (!SetConsoleOutputCP(CP_UTF8)) {
         std::cerr << "Warning: Gagal set output CP ke UTF-8!" << std::endl;
     }
 
-    // 2. Set Input Code Page ke UTF-8 (Biar inputan user gak error kalau ada karakter aneh)
+    // 2. Set Input Code Page ke UTF-8
     if (!SetConsoleCP(CP_UTF8)) {
         std::cerr << "Warning: Gagal set input CP ke UTF-8!" << std::endl;
     }
 
     // 3. Enable Virtual Terminal Processing
-    // Ini biar support ANSI colors (\033[31m...) dan cursor movement di CMD/PowerShell modern.
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     if (hOut == INVALID_HANDLE_VALUE) return;
 
@@ -28,7 +26,6 @@ void SetupConsole() {
 
     dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
     if (!SetConsoleMode(hOut, dwMode)) {
-        // Kalau gagal, biasanya karena Windows versi lama (Pre-Win10), tapi ya udahlah.
         std::cerr << "Warning: Gagal enable Virtual Terminal Processing!" << std::endl;
     }
 }
@@ -274,10 +271,6 @@ namespace {
                     <input type="text" id="authToken" placeholder="Auth Token" value="secure_lab_token_2025">
                     <button onclick="connectStream()">🔗 Connect</button>
                     <button onclick="disconnectStream()" class="btn-danger">❌ Disconnect</button>
-                    <p style="font-size: 0.8em; color: #a0a0a0; margin-top: 10px;">
-                        💡 Default token: secure_lab_token_2025<br>
-                        Check frqs.conf for your token
-                    </p>
                 </div>
                 
                 <div class="control-section">
@@ -334,13 +327,10 @@ namespace {
                 return;
             }
             
-            // Karena <img> tidak bisa set custom headers, kita gunakan EventSource atau fetch
-            // Tapi untuk MJPEG stream yang simple, kita gunakan query parameter workaround
-            
             loading.style.display = 'none';
             screenImg.style.display = 'block';
             
-            // Set stream URL dengan token di query parameter
+            // FIXED: Pass token as query parameter
             const streamUrl = `${SERVER_URL}/stream?token=${encodeURIComponent(token)}`;
             
             screenImg.onload = () => {
@@ -429,7 +419,7 @@ namespace {
 
 int main(int argc, char* argv[]) {
     using namespace frqs;
-	SetupConsole() ;
+    SetupConsole();
     
     std::cout << R"(
 ╔═══════════════════════════════════════════════════════════╗
@@ -454,23 +444,34 @@ int main(int argc, char* argv[]) {
         utils::logInfo("🚀 Starting FRQS Network Server...");
         utils::logInfo("📅 " + std::string(__DATE__) + " " + std::string(__TIME__));
         
-        // Load or create config
+        // FIXED: Config file harus di folder BIN (working directory)
         auto& config = utils::Config::instance();
-        std::filesystem::path config_file = "frqs.conf";
+        std::filesystem::path config_file = "frqs.conf";  // Relative to working directory
         
+        // Override if provided via command line
         if (argc > 1) {
             config_file = argv[1];
         }
         
+        // Create default config if doesn't exist
         if (!std::filesystem::exists(config_file)) {
             utils::logInfo("📝 Config file not found, creating default...");
             createDefaultConfig(config_file);
         }
         
+        // Load config
         if (!config.load(config_file)) {
             utils::logWarn("⚠️  Could not load config, using defaults");
         } else {
             utils::logInfo("✅ Configuration loaded from: " + config_file.string());
+        }
+        
+        // Verify AUTH_TOKEN is loaded
+        std::string auth_token = config.getAuthToken();
+        if (auth_token.empty()) {
+            utils::logError("❌ AUTH_TOKEN is empty! Check your frqs.conf file!");
+            std::cerr << "\n⚠️  WARNING: No auth token configured!\n";
+            std::cerr << "   Please check frqs.conf and ensure AUTH_TOKEN is set.\n" << std::endl;
         }
         
         // Create directories
@@ -520,7 +521,13 @@ int main(int argc, char* argv[]) {
         std::cout << "│  Network: http://[YOUR_IP]:" << port << "  │" << std::endl;
         std::cout << "│                                     │" << std::endl;
         std::cout << "│  Auth Token:                        │" << std::endl;
-        std::cout << "│  " << config.getAuthToken() << std::string(37 - config.getAuthToken().length(), ' ') << "│" << std::endl;
+        
+        // Show token (truncate if too long)
+        std::string token_display = auth_token.length() > 30 
+            ? auth_token.substr(0, 27) + "..." 
+            : auth_token;
+        
+        std::cout << "│  " << token_display << std::string(37 - token_display.length(), ' ') << "│" << std::endl;
         std::cout << "│                                     │" << std::endl;
         std::cout << "│  Press Ctrl+C to stop               │" << std::endl;
         std::cout << "└─────────────────────────────────────┘\n" << std::endl;

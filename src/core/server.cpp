@@ -145,13 +145,41 @@ void Server::handleClient(net::Socket client, net::SockAddr client_addr) {
 void Server::handleStreamDirect(net::Socket client, const http::HTTPRequest& request) {
     auto& config = utils::Config::instance();
     
-    // Validate auth
+    // FIXED: Support auth via query parameter untuk <img> tag
+    bool authenticated = false;
+    
+    // Method 1: Check Authorization header (untuk fetch API)
     auto auth_header = request.getHeader("Authorization");
     std::string expected = "Bearer " + config.getAuthToken();
-    if (!auth_header || *auth_header != expected) {
+    if (auth_header && *auth_header == expected) {
+        authenticated = true;
+        utils::logInfo("Auth via header: SUCCESS");
+    }
+    
+    // Method 2: Check query parameter (untuk <img> tag)
+    if (!authenticated) {
+        auto token_param = request.getQueryParam("token");
+        if (token_param) {
+            utils::logInfo(std::format("Token from query: [{}]", std::string(*token_param)));
+            utils::logInfo(std::format("Expected token: [{}]", config.getAuthToken()));
+            
+            if (*token_param == config.getAuthToken()) {
+                authenticated = true;
+                utils::logInfo("Auth via query param: SUCCESS");
+            } else {
+                utils::logWarn("Auth via query param: FAILED (token mismatch)");
+            }
+        } else {
+            utils::logWarn("No token in query parameter");
+        }
+    }
+    
+    if (!authenticated) {
+        utils::logWarn("Streaming request rejected: Invalid or missing auth token");
         auto response = http::HTTPResponse()
             .setStatus(401, "Unauthorized")
-            .setHeader("Access-Control-Allow-Origin", "*");
+            .setHeader("Access-Control-Allow-Origin", "*")
+            .setBody("Invalid or missing auth token. Check frqs.conf for AUTH_TOKEN.");
         client.send(response.build());
         return;
     }
@@ -161,6 +189,7 @@ void Server::handleStreamDirect(net::Socket client, const http::HTTPRequest& req
     int frame_delay_ms = 1000 / fps_limit;
     
     utils::ScreenCapturer capturer;
+    utils::logInfo(std::format("Starting stream for client (FPS: {}, Scale: {})", fps_limit, scale_factor));
     
     // Send MJPEG headers
     std::string headers = 
@@ -204,6 +233,8 @@ void Server::handleStreamDirect(net::Socket client, const http::HTTPRequest& req
     } catch (const std::exception& e) {
         utils::logError(std::format("Streaming error: {}", e.what()));
     }
+    
+    utils::logInfo("Stream ended");
 }
 
 // OPTIMIZED: Fast JSON value extraction
