@@ -31,12 +31,17 @@ add_executable(FRQS_NET
 	src/net/ipv4.cpp
 	src/net/sockaddr.cpp
 	src/net/socket.cpp
+	src/net/http_client.cpp
 	src/utils/filesystem_utils.cpp
 	src/utils/logger.cpp
 	src/utils/thread_pool.cpp
+	src/utils/input_injector.cpp
+	src/utils/config.cpp
+	src/utils/screen_capturer.cpp
 	src/http/mime_types.cpp
 	src/http/request.cpp
 	src/http/response.cpp
+	src/http/multipart_parser.cpp
 	src/core/server.cpp
 )
 

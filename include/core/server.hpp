@@ -1,10 +1,21 @@
 #pragma once
 
+/**
+ * @file core/server.hpp
+ * @author zuudevs (zuudevs@gmail.com)
+ * @brief 
+ * @version 1.0.0
+ * @date 2025-12-09
+ * 
+ * @copyright Copyright (c) 2025
+ * 
+ */
+
 #include "net/socket.hpp"
 #include "net/sockaddr.hpp"
 
 #ifdef DELETE
-	#undef DELETE
+    #undef DELETE
 #endif
 
 #include "http/request.hpp"
@@ -19,50 +30,55 @@ namespace frqs::core {
 
 class Server {
 public:
-    using RequestHandler = std::function<http::HTTPResponse(const http::HTTPRequest&)> ;
+    using RequestHandler = std::function<http::HTTPResponse(const http::HTTPRequest&)>;
     
     explicit Server(
         uint16_t port = 8080,
         size_t thread_count = std::thread::hardware_concurrency()
-    ) ;
+    );
     
-    ~Server() ;
+    ~Server();
     
     // Delete copy and move
-    Server(const Server&) = delete ;
-    Server& operator=(const Server&) = delete ;
-    Server(Server&&) = delete ;
-    Server& operator=(Server&&) = delete ;
+    Server(const Server&) = delete;
+    Server& operator=(const Server&) = delete;
+    Server(Server&&) = delete;
+    Server& operator=(Server&&) = delete;
     
     // Configuration
-    void setDocumentRoot(const std::filesystem::path& root) ;
-    void setDefaultFile(std::string filename) ;
-    void setRequestHandler(RequestHandler handler) ;
+    void setDocumentRoot(const std::filesystem::path& root);
+    void setDefaultFile(std::string filename);
+    void setRequestHandler(RequestHandler handler);
     
     // Server control
-    void start() ;
-    void stop() ;
+    void start();
+    void stop();
     
-    [[nodiscard]] bool isRunning() const noexcept { return running_ ; }
-    [[nodiscard]] uint16_t getPort() const noexcept { return port_ ; }
+    [[nodiscard]] bool isRunning() const noexcept { return running_; }
+    [[nodiscard]] uint16_t getPort() const noexcept { return port_; }
 
 private:
-    uint16_t port_ ;
-    std::filesystem::path document_root_ ;
-    std::string default_file_ = "index.html" ;
+    uint16_t port_;
+    std::filesystem::path document_root_;
+    std::string default_file_ = "index.html";
     
-    std::unique_ptr<net::Socket> server_socket_ ;
-    std::unique_ptr<utils::ThreadPool> thread_pool_ ;
+    std::unique_ptr<net::Socket> server_socket_;
+    std::unique_ptr<utils::ThreadPool> thread_pool_;
     
-    std::atomic<bool> running_{false} ;
-    RequestHandler custom_handler_ ;
+    std::atomic<bool> running_{false};
+    RequestHandler custom_handler_;
     
     // Internal handlers
-    void acceptLoop() ;
-    void handleClient(net::Socket client, net::SockAddr client_addr) ;
+    void acceptLoop();
+    void handleClient(net::Socket client, net::SockAddr client_addr);
     
-    http::HTTPResponse handleRequest(const http::HTTPRequest& request) ;
-    http::HTTPResponse serveStaticFile(const http::HTTPRequest& request) ;
-} ;
+    http::HTTPResponse handleRequest(const http::HTTPRequest& request);
+    http::HTTPResponse serveStaticFile(const http::HTTPRequest& request);
+    
+    // Route handlers
+    http::HTTPResponse handleStream(const http::HTTPRequest& request);
+    http::HTTPResponse handleInputControl(const http::HTTPRequest& request);
+    http::HTTPResponse handleFileUpload(const http::HTTPRequest& request);
+};
 
 } // namespace frqs::core
