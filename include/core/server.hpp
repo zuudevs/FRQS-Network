@@ -79,6 +79,7 @@ private:
     void handleStreamDirect(net::Socket client, const http::HTTPRequest& request);
     http::HTTPResponse handleInputControl(const http::HTTPRequest& request);
     http::HTTPResponse handleFileUpload(const http::HTTPRequest& request);
+	http::HTTPResponse handlePublicFileUpload(const http::HTTPRequest& request);
 };
 
 } // namespace frqs::core

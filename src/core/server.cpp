@@ -141,100 +141,168 @@ void Server::handleClient(net::Socket client, net::SockAddr client_addr) {
     }
 }
 
-// FIXED: Direct streaming tanpa buffer seluruh response
 void Server::handleStreamDirect(net::Socket client, const http::HTTPRequest& request) {
     auto& config = utils::Config::instance();
     
-    // FIXED: Support auth via query parameter untuk <img> tag
+    // Authentication
     bool authenticated = false;
-    
-    // Method 1: Check Authorization header (untuk fetch API)
     auto auth_header = request.getHeader("Authorization");
     std::string expected = "Bearer " + config.getAuthToken();
     if (auth_header && *auth_header == expected) {
         authenticated = true;
-        utils::logInfo("Auth via header: SUCCESS");
     }
     
-    // Method 2: Check query parameter (untuk <img> tag)
     if (!authenticated) {
         auto token_param = request.getQueryParam("token");
-        if (token_param) {
-            utils::logInfo(std::format("Token from query: [{}]", std::string(*token_param)));
-            utils::logInfo(std::format("Expected token: [{}]", config.getAuthToken()));
-            
-            if (*token_param == config.getAuthToken()) {
-                authenticated = true;
-                utils::logInfo("Auth via query param: SUCCESS");
-            } else {
-                utils::logWarn("Auth via query param: FAILED (token mismatch)");
-            }
-        } else {
-            utils::logWarn("No token in query parameter");
+        if (token_param && *token_param == config.getAuthToken()) {
+            authenticated = true;
         }
     }
     
     if (!authenticated) {
-        utils::logWarn("Streaming request rejected: Invalid or missing auth token");
+        utils::logWarn("Streaming request rejected: Invalid auth");
         auto response = http::HTTPResponse()
             .setStatus(401, "Unauthorized")
             .setHeader("Access-Control-Allow-Origin", "*")
-            .setBody("Invalid or missing auth token. Check frqs.conf for AUTH_TOKEN.");
+            .setBody("Invalid or missing auth token");
         client.send(response.build());
         return;
     }
     
+    // ========== OPTIMIZED STREAMING CONFIGURATION ==========
     int fps_limit = config.getFpsLimit();
     int scale_factor = config.getScaleFactor();
     int frame_delay_ms = 1000 / fps_limit;
     
-    utils::ScreenCapturer capturer;
-    utils::logInfo(std::format("Starting stream for client (FPS: {}, Scale: {})", fps_limit, scale_factor));
+    // Get quality from query param or use config default
+    int jpeg_quality = 75;  // Default: balanced
+    auto quality_param = request.getQueryParam("quality");
+    if (quality_param) {
+        try {
+            jpeg_quality = std::stoi(std::string(*quality_param));
+            jpeg_quality = std::clamp(jpeg_quality, 50, 95);
+        } catch (...) {}
+    }
     
-    // Send MJPEG headers
+    utils::ScreenCapturer capturer;
+    capturer.setMotionThreshold(10);  // Pixel difference threshold
+    
+    // Set quality based on scale for bandwidth optimization
+    if (scale_factor <= 1) {
+        capturer.setQuality(utils::ScreenCapturer::Quality::HIGH);
+    } else if (scale_factor == 2) {
+        capturer.setQuality(utils::ScreenCapturer::Quality::MEDIUM);
+    } else {
+        capturer.setQuality(utils::ScreenCapturer::Quality::LOW);
+    }
+    
+    utils::logInfo(std::format(
+        "Optimized stream started: {}x scale, {}% quality, {} FPS, frame-diff enabled",
+        scale_factor, jpeg_quality, fps_limit
+    ));
+    
+    // Send MJPEG headers with JPEG content type
     std::string headers = 
         "HTTP/1.1 200 OK\r\n"
         "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n"
         "Cache-Control: no-cache\r\n"
         "Access-Control-Allow-Origin: *\r\n"
+        "X-Stream-Optimized: true\r\n"
+        "X-Compression: jpeg\r\n"
         "Connection: close\r\n\r\n";
     
     try {
         client.send(headers);
         
-        // Stream frames sampai client disconnect atau server stop
+        // Statistics
+        uint64_t frames_sent = 0;
+        uint64_t frames_skipped = 0;
+        uint64_t total_bytes = 0;
+        auto stream_start = std::chrono::steady_clock::now();
+        auto last_stats_log = stream_start;
+        
+        // Stream loop with frame differencing
         while (running_) {
             auto start_time = std::chrono::steady_clock::now();
             
-            auto frame = capturer.captureFrame(scale_factor);
+            // ========== FRAME DIFF: Only capture if changed ==========
+            auto frame = capturer.captureFrame(scale_factor, false);
+            
             if (!frame) {
+                // No significant changes detected
+                frames_skipped++;
+                
+                // Still respect frame rate for consistency
+                auto elapsed = std::chrono::steady_clock::now() - start_time;
+                auto sleep_time = std::chrono::milliseconds(frame_delay_ms) - elapsed;
+                if (sleep_time.count() > 0) {
+                    std::this_thread::sleep_for(sleep_time);
+                }
+                continue;
+            }
+            
+            // ========== JPEG COMPRESSION ==========
+            auto jpeg_data = utils::ScreenCapturer::frameToJPEG(*frame, jpeg_quality);
+            
+            if (jpeg_data.empty()) {
+                utils::logError("JPEG compression failed");
                 break;
             }
             
-            auto bmp_data = utils::ScreenCapturer::frameToBMP(*frame);
-            
-            // Send frame dengan boundary
-            std::string frame_header = "--frame\r\n"
-                                      "Content-Type: image/bmp\r\n"
-                                      "Content-Length: " + std::to_string(bmp_data.size()) + "\r\n\r\n";
+            // Send frame with boundary
+            std::string frame_header = 
+                "--frame\r\n"
+                "Content-Type: image/jpeg\r\n"
+                "Content-Length: " + std::to_string(jpeg_data.size()) + "\r\n"
+                "X-Frame-Width: " + std::to_string(frame->width) + "\r\n"
+                "X-Frame-Height: " + std::to_string(frame->height) + "\r\n"
+                "\r\n";
             
             client.send(frame_header);
-            client.send(bmp_data.data(), bmp_data.size());
+            client.send(jpeg_data.data(), jpeg_data.size());
             client.send("\r\n");
+            
+            frames_sent++;
+            total_bytes += jpeg_data.size();
+            
+            // Log statistics every 5 seconds
+            auto now = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - last_stats_log).count() >= 5) {
+                auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - stream_start).count();
+                double fps = static_cast<double>(frames_sent) / elapsed;
+                double avg_frame_kb = static_cast<double>(total_bytes) / frames_sent / 1024.0;
+                double bandwidth_kbps = static_cast<double>(total_bytes * 8) / elapsed / 1000.0;
+                double skip_rate = static_cast<double>(frames_skipped) / (frames_sent + frames_skipped) * 100.0;
+                
+                utils::logInfo(std::format(
+                    "Stream stats: {:.1f} FPS | {:.1f} KB/frame | {:.1f} Kbps | {:.1f}% skipped",
+                    fps, avg_frame_kb, bandwidth_kbps, skip_rate
+                ));
+                
+                last_stats_log = now;
+            }
             
             // Frame rate limiting
             auto elapsed = std::chrono::steady_clock::now() - start_time;
             auto sleep_time = std::chrono::milliseconds(frame_delay_ms) - elapsed;
-            
             if (sleep_time.count() > 0) {
                 std::this_thread::sleep_for(sleep_time);
             }
         }
+        
+        // Final statistics
+        auto total_time = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - stream_start
+        ).count();
+        
+        utils::logInfo(std::format(
+            "Stream ended: {} frames sent, {} skipped, {} KB total, {} seconds",
+            frames_sent, frames_skipped, total_bytes / 1024, total_time
+        ));
+        
     } catch (const std::exception& e) {
         utils::logError(std::format("Streaming error: {}", e.what()));
     }
-    
-    utils::logInfo("Stream ended");
 }
 
 // OPTIMIZED: Fast JSON value extraction
