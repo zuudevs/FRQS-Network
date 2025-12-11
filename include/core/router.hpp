@@ -58,33 +58,13 @@ public:
     
     // ========== ROUTE REGISTRATION ==========
     
-    void get(std::string_view path, RouteHandler handler) {
-        addRoute(http::Method::GET, path, std::move(handler));
-    }
-    
-    void post(std::string_view path, RouteHandler handler) {
-        addRoute(http::Method::POST, path, std::move(handler));
-    }
-    
-    void put(std::string_view path, RouteHandler handler) {
-        addRoute(http::Method::PUT, path, std::move(handler));
-    }
-    
-    void del(std::string_view path, RouteHandler handler) {
-        addRoute(http::Method::DELETE, path, std::move(handler));
-    }
-    
-    void patch(std::string_view path, RouteHandler handler) {
-        addRoute(http::Method::PATCH, path, std::move(handler));
-    }
-    
-    void options(std::string_view path, RouteHandler handler) {
-        addRoute(http::Method::OPTIONS, path, std::move(handler));
-    }
-    
-    void head(std::string_view path, RouteHandler handler) {
-        addRoute(http::Method::HEAD, path, std::move(handler));
-    }
+    void get(std::string_view path, RouteHandler handler) ;
+    void post(std::string_view path, RouteHandler handler) ;
+    void put(std::string_view path, RouteHandler handler) ;
+    void del(std::string_view path, RouteHandler handler) ;
+    void patch(std::string_view path, RouteHandler handler) ;
+    void options(std::string_view path, RouteHandler handler) ;
+    void head(std::string_view path, RouteHandler handler) ;
     
     // ========== ROUTE GROUPS ==========
     
@@ -97,12 +77,7 @@ public:
      * api.get("/users", handler);  // Matches /api/v1/users
      * ```
      */
-    Router group(std::string_view prefix) {
-        Router child;
-        child.prefix_ = prefix_ + std::string(prefix);
-        child.parent_ = this;
-        return child;
-    }
+    Router group(std::string_view prefix) ;
     
     // ========== ROUTE MATCHING ==========
     
@@ -112,30 +87,7 @@ public:
      * @param ctx Request context
      * @return true if route was found and executed
      */
-    bool route(Context& ctx) {
-        auto path = ctx.request().getPath();
-        auto method = ctx.request().getMethod();
-        
-        for (auto& route : routes_) {
-            if (route.method != method) continue;
-            
-            std::smatch matches;
-            std::string path_str(path);
-            
-            if (std::regex_match(path_str, matches, route.pattern)) {
-                // Extract path parameters
-                for (size_t i = 1; i < matches.size(); ++i) {
-                    ctx.setParam(route.param_names[i - 1], matches[i].str());
-                }
-                
-                // Execute handler
-                route.handler(ctx);
-                return true;
-            }
-        }
-        
-        return false;  // No route found
-    }
+    bool route(Context& ctx) ;
     
 private:
     struct Route {
@@ -150,49 +102,7 @@ private:
     std::string prefix_;
     Router* parent_ = nullptr;
     
-    void addRoute(http::Method method, std::string_view path, RouteHandler handler) {
-        std::string full_path = prefix_ + std::string(path);
-        
-        // Convert path to regex pattern
-        // /users/:id/:action -> /users/([^/]+)/([^/]+)
-        std::vector<std::string> param_names;
-        std::string pattern_str = "^";
-        
-        size_t pos = 0;
-        while (pos < full_path.size()) {
-            if (full_path[pos] == ':') {
-                // Found parameter
-                size_t end = full_path.find('/', pos);
-                if (end == std::string::npos) end = full_path.size();
-                
-                std::string param_name = full_path.substr(pos + 1, end - pos - 1);
-                param_names.push_back(param_name);
-                
-                pattern_str += "([^/]+)";
-                pos = end;
-            } else {
-                // Regular character
-                char c = full_path[pos];
-                if (c == '.' || c == '+' || c == '*' || c == '?' || 
-                    c == '^' || c == '$' || c == '(' || c == ')' ||
-                    c == '[' || c == ']' || c == '{' || c == '}' || c == '|') {
-                    pattern_str += '\\';
-                }
-                pattern_str += c;
-                pos++;
-            }
-        }
-        
-        pattern_str += "$";
-        
-        routes_.push_back({
-            method,
-            std::string(path),
-            std::regex(pattern_str),
-            std::move(param_names),
-            std::move(handler)
-        });
-    }
+    void addRoute(http::Method method, std::string_view path, RouteHandler handler) ;
 };
 
 } // namespace frqs::core

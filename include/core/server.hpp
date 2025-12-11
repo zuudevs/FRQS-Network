@@ -3,7 +3,7 @@
 /**
  * @file core/server.hpp
  * @brief Core HTTP server - Clean, general-purpose, ultra-fast
- * @version 2.0.0
+ * @version 1.1.1
  * 
  * Core server provides:
  * - HTTP/1.1 protocol support
