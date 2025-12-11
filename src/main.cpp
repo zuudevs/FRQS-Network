@@ -355,7 +355,9 @@ int main(int argc, char* argv[]) {
         }
         
         // Setup directories
-        std::filesystem::path doc_root = config.getDocRoot();
+        std::filesystem::path doc_root = std::filesystem::absolute(config.getDocRoot()); 
+
+		frqs::utils::logInfo("📂 Static Root Absolute Path: " + doc_root.string());
         
         // Create FRQS landing page if no index.html exists
         if (!std::filesystem::exists(doc_root / "index.html")) {
@@ -384,7 +386,7 @@ int main(int argc, char* argv[]) {
         // ========== ADD PLUGINS ==========
         
         // Static files plugin
-       plugins::StaticFilesConfig static_config;
+        plugins::StaticFilesConfig static_config;
         static_config.root = doc_root;
         static_config.mount_path = "/";
         static_config.default_file = "index.html";
