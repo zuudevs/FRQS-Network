@@ -187,7 +187,7 @@ private:
         // Check if it's a directory
         if (std::filesystem::is_directory(*safe_path)) {
             if (config_.enable_directory_listing) {
-                serveDirec toryListing(ctx, *safe_path);
+                serveDirectoryListing(ctx, *safe_path);
             } else {
                 ctx.status(403)
                    .header("Content-Type", "text/html")
